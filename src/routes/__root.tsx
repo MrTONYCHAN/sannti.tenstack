@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "sonner";
 import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
+import { usesLocalAuth } from "@/lib/local-auth";
 // noop
 
 function NotFoundComponent() {
@@ -130,6 +131,12 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow"
+        >
+          Skip to main content
+        </a>
         {children}
         <Scripts />
       </body>
@@ -142,6 +149,16 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    if (usesLocalAuth()) {
+      const onAuthChange = () => {
+        router.invalidate();
+        queryClient.invalidateQueries();
+      };
+      window.addEventListener("saanti-auth-changed", onAuthChange);
+      return () =>
+        window.removeEventListener("saanti-auth-changed", onAuthChange);
+    }
+
     if (!hasSupabaseConfig()) return;
 
     const { data } = supabase.auth.onAuthStateChange((event) => {

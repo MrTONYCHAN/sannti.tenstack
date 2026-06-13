@@ -142,6 +142,7 @@ function JournalPage() {
             </div>
             <Button
               disabled={mut.isPending || content.trim().length < 5}
+              aria-busy={mut.isPending}
               onClick={() => mut.mutate()}
               className="w-full sm:w-auto"
             >
@@ -150,9 +151,7 @@ function JournalPage() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Reflecting…
                 </>
               ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" /> Save & analyze
-                </>
+                <>Save & analyze</>
               )}
             </Button>
           </CardContent>
@@ -249,19 +248,22 @@ function SliderField({
   onChange: (n: number) => void;
   hint: string;
 }) {
+  const id = label.toLowerCase();
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label>{label}</Label>
-        <span className="text-sm text-muted-foreground">
+        <Label htmlFor={id}>{label}</Label>
+        <span className="text-sm text-muted-foreground" aria-live="polite">
           {hint} {value}/10
         </span>
       </div>
       <Slider
+        id={id}
         value={[value]}
         min={1}
         max={10}
         step={1}
+        aria-label={`${label}, ${value} out of 10`}
         onValueChange={(v) => onChange(v[0])}
       />
     </div>

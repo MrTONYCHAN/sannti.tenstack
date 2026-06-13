@@ -1,7 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  requireSupabaseAuth,
+  type AuthContext,
+} from "@/integrations/supabase/auth-middleware";
+import * as localData from "@/lib/local-data.server";
 import { generateText } from "ai";
-import { z } from "zod";
 import {
   buildCompanionSystemPrompt,
   createCompanionModel,
@@ -14,19 +17,13 @@ import {
   CRISIS_SUPPORT_MESSAGE,
 } from "./wellness-safety";
 
-const JournalInput = z.object({
-  mood: z.number().int().min(1).max(10),
-  stress: z.number().int().min(1).max(10),
-  energy: z.number().int().min(1).max(10),
-  sleep_hours: z.number().min(0).max(24).optional(),
-  study_hours: z.number().min(0).max(24).optional(),
-  content: z.string().trim().min(5).max(8000),
-});
+import { journalEntrySchema } from "./journal-schema";
 
 export const createJournalEntry = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) => JournalInput.parse(d))
+  .validator((d: unknown) => journalEntrySchema.parse(d))
   .handler(async ({ data, context }) => {
+    const ctx = context as AuthContext;
     const key = getGoogleAiApiKey();
     const crisisDetected = containsCrisisLanguage(data.content);
 
@@ -73,10 +70,25 @@ Analyze this entry. Respond ONLY in this exact JSON shape (no markdown, no prose
       }
     }
 
-    const { data: row, error } = await context.supabase
-      .from("journal_entries")
+    if (ctx.localMode) {
+      return localData.insertJournalEntry(ctx.userId, {
+        mood: data.mood,
+        stress: data.stress,
+        energy: data.energy,
+        sleep_hours: data.sleep_hours ?? null,
+        study_hours: data.study_hours ?? null,
+        content: data.content,
+        ai_summary,
+        ai_triggers,
+        ai_suggestions,
+        ai_sentiment,
+      });
+    }
+
+    const { data: row, error } = await ctx
+      .supabase!.from("journal_entries")
       .insert({
-        user_id: context.userId,
+        user_id: ctx.userId,
         mood: data.mood,
         stress: data.stress,
         energy: data.energy,
@@ -97,8 +109,13 @@ Analyze this entry. Respond ONLY in this exact JSON shape (no markdown, no prose
 export const listJournalEntries = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("journal_entries")
+    const ctx = context as AuthContext;
+    if (ctx.localMode) {
+      return localData.listJournalEntries(ctx.userId);
+    }
+
+    const { data, error } = await ctx
+      .supabase!.from("journal_entries")
       .select("*")
       .order("entry_date", { ascending: false })
       .order("created_at", { ascending: false })

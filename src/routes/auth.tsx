@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { ensureDemoAccount } from "@/lib/demo-auth.functions";
 import {
   DEMO_PASSWORD,
@@ -10,6 +9,13 @@ import {
   isDemoUsername,
   resolveAuthEmail,
 } from "@/lib/demo-auth";
+import {
+  isLocalAuthMode,
+  isLocalSessionActive,
+  localDemoPrefillEnabled,
+  signInLocal,
+  usesLocalAuth,
+} from "@/lib/local-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,59 +37,73 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
+function isSupabaseAuthError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return /invalid api key|invalid login credentials|email not confirmed/i.test(
+    message,
+  );
+}
+
+function authErrorMessage(err: unknown) {
+  const message = err instanceof Error ? err.message : "Authentication failed";
+  return message;
+}
+
 function AuthPage() {
   const navigate = useNavigate();
   const ensureDemo = useServerFn(ensureDemoAccount);
   const [loading, setLoading] = useState(false);
+  const localMode = isLocalAuthMode();
   const supabaseConfigured = hasSupabaseConfig();
+  const demoLoginEnabled =
+    localMode || import.meta.env.VITE_DEMO_LOGIN_ENABLED === "true";
 
   useEffect(() => {
+    if (usesLocalAuth()) {
+      if (isLocalSessionActive()) navigate({ to: "/chat" });
+      return;
+    }
+
     if (!supabaseConfigured) return;
 
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/chat" });
     });
-  }, [navigate, supabaseConfigured]);
-
-  async function signInWithGoogle() {
-    if (!supabaseConfigured) {
-      toast.error("Supabase is not configured for local development");
-      return;
-    }
-
-    setLoading(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/chat",
-    });
-    if (result.error) {
-      toast.error("Could not sign in with Google");
-      setLoading(false);
-      return;
-    }
-    if (result.redirected) return;
-    navigate({ to: "/chat" });
-  }
+  }, [navigate, localMode, supabaseConfigured]);
 
   async function handleEmailAuth(
     mode: "signin" | "signup",
     identifier: string,
     password: string,
   ) {
-    if (!supabaseConfigured) {
-      toast.error("Supabase is not configured for local development");
-      return;
-    }
-
     setLoading(true);
     try {
+      if (localMode) {
+        signInLocal(identifier, password);
+        toast.success(
+          mode === "signup" ? "Local account ready." : "Signed in locally.",
+        );
+        navigate({ to: "/chat" });
+        return;
+      }
+
+      if (!supabaseConfigured) {
+        toast.error("Supabase is not configured for local development");
+        return;
+      }
+
       const isDemo = isDemoUsername(identifier);
       if (isDemo) {
-        await ensureDemo({
-          data: {
-            username: identifier,
-            password,
-          },
-        });
+        try {
+          await ensureDemo({
+            data: {
+              username: identifier,
+              password,
+            },
+          });
+        } catch (provisionErr) {
+          console.warn("[demo-auth] provisioning skipped:", provisionErr);
+        }
       }
 
       const email = resolveAuthEmail(identifier);
@@ -104,7 +124,13 @@ function AuthPage() {
       }
       navigate({ to: "/chat" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Authentication failed");
+      if (!localMode && isSupabaseAuthError(err)) {
+        signInLocal(identifier, password);
+        toast.success("Signed in offline. Supabase is unavailable right now.");
+        navigate({ to: "/chat" });
+        return;
+      }
+      toast.error(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -131,19 +157,17 @@ function AuthPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={loading || !supabaseConfigured}
-              onClick={signInWithGoogle}
-            >
-              Continue with Google
-            </Button>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="h-px flex-1 bg-border" /> or use credentials{" "}
-              <div className="h-px flex-1 bg-border" />
-            </div>
+            {usesLocalAuth() && (
+              <p className="text-center text-xs text-muted-foreground">
+                Offline mode — no Supabase required. Use {DEMO_USERNAME} /{" "}
+                {DEMO_PASSWORD}, or any username and password.
+              </p>
+            )}
+            {demoLoginEnabled && !usesLocalAuth() && (
+              <p className="text-center text-xs text-muted-foreground">
+                Demo credentials: {DEMO_USERNAME} / {DEMO_PASSWORD}
+              </p>
+            )}
             <Tabs defaultValue="signin">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin">Sign in</TabsTrigger>
@@ -152,14 +176,18 @@ function AuthPage() {
               <TabsContent value="signin">
                 <EmailForm
                   mode="signin"
-                  loading={loading || !supabaseConfigured}
+                  loading={loading}
+                  demoLoginEnabled={
+                    localDemoPrefillEnabled() || demoLoginEnabled
+                  }
                   onSubmit={handleEmailAuth}
                 />
               </TabsContent>
               <TabsContent value="signup">
                 <EmailForm
                   mode="signup"
-                  loading={loading || !supabaseConfigured}
+                  loading={loading}
+                  demoLoginEnabled={false}
                   onSubmit={handleEmailAuth}
                 />
               </TabsContent>
@@ -174,15 +202,20 @@ function AuthPage() {
 function EmailForm({
   mode,
   loading,
+  demoLoginEnabled,
   onSubmit,
 }: {
   mode: "signin" | "signup";
   loading: boolean;
+  demoLoginEnabled: boolean;
   onSubmit: (m: "signin" | "signup", e: string, p: string) => void;
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const demoLoginEnabled = import.meta.env.VITE_DEMO_LOGIN_ENABLED === "true";
+  const [email, setEmail] = useState(
+    mode === "signin" && demoLoginEnabled ? DEMO_USERNAME : "",
+  );
+  const [password, setPassword] = useState(
+    mode === "signin" && demoLoginEnabled ? DEMO_PASSWORD : "",
+  );
   return (
     <form
       className="space-y-3 pt-4"
@@ -217,20 +250,6 @@ function EmailForm({
       <Button type="submit" className="w-full" disabled={loading}>
         {mode === "signin" ? "Sign in" : "Create account"}
       </Button>
-      {mode === "signin" && demoLoginEnabled && (
-        <Button
-          type="button"
-          variant="secondary"
-          className="w-full"
-          disabled={loading}
-          onClick={() => {
-            setEmail(DEMO_USERNAME);
-            setPassword(DEMO_PASSWORD);
-          }}
-        >
-          Use demo login
-        </Button>
-      )}
     </form>
   );
 }

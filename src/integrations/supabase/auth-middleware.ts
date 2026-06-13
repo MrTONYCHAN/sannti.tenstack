@@ -2,51 +2,70 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
+import { isLocalAuthToken } from "@/lib/auth-mode";
+import {
+  isServerLocalAuthMode,
+  localAuthServerContext,
+} from "@/lib/auth-mode.server";
+import {
+  getSupabaseServerEnv,
+  hasSupabaseServerConfig,
+} from "@/lib/supabase-env.server";
+
+export type AuthContext = {
+  localMode: boolean;
+  userId: string;
+  supabase: SupabaseClient<Database> | null;
+  claims: { sub: string };
+};
+
+function readBearerToken(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
 
 export const requireSupabaseAuth = createMiddleware({
   type: "function",
 }).server(async ({ next }) => {
-  const SUPABASE_URL =
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SUPABASE_PUBLISHABLE_KEY =
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ["VITE_SUPABASE_URL"] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ["VITE_SUPABASE_PUBLISHABLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Add them to .env.local.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
-  }
-
   const request = getRequest();
 
   if (!request?.headers) {
+    if (isServerLocalAuthMode()) {
+      return next({ context: localAuthServerContext() });
+    }
     throw new Error("Unauthorized: No request headers available");
   }
 
-  const authHeader = request.headers.get("authorization");
+  const token = readBearerToken(request);
 
-  if (!authHeader) {
+  if (!token) {
+    if (isServerLocalAuthMode()) {
+      return next({ context: localAuthServerContext() });
+    }
     throw new Error("Unauthorized: No authorization header provided");
   }
 
-  if (!authHeader.startsWith("Bearer ")) {
-    throw new Error("Unauthorized: Only Bearer tokens are supported");
+  if (isLocalAuthToken(token)) {
+    return next({ context: localAuthServerContext() });
   }
 
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) {
-    throw new Error("Unauthorized: No token provided");
+  if (!hasSupabaseServerConfig()) {
+    if (isServerLocalAuthMode()) {
+      return next({ context: localAuthServerContext() });
+    }
+    throw new Error("Unauthorized: Supabase is not configured");
   }
+
+  const { url: SUPABASE_URL, publishableKey: SUPABASE_PUBLISHABLE_KEY } =
+    getSupabaseServerEnv();
 
   const supabase = createClient<Database>(
-    SUPABASE_URL,
-    SUPABASE_PUBLISHABLE_KEY,
+    SUPABASE_URL!,
+    SUPABASE_PUBLISHABLE_KEY!,
     {
       global: {
         headers: {
@@ -61,20 +80,20 @@ export const requireSupabaseAuth = createMiddleware({
     },
   );
 
-  const { data, error } = await supabase.auth.getClaims(token);
-  if (error || !data?.claims) {
-    throw new Error("Unauthorized: Invalid token");
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    if (isServerLocalAuthMode()) {
+      return next({ context: localAuthServerContext() });
+    }
+    throw new Error(error?.message ?? "Unauthorized: Invalid token");
   }
 
-  if (!data.claims.sub) {
-    throw new Error("Unauthorized: No user ID found in token");
-  }
+  const context: AuthContext = {
+    localMode: false,
+    supabase,
+    userId: data.user.id,
+    claims: { sub: data.user.id },
+  };
 
-  return next({
-    context: {
-      supabase,
-      userId: data.claims.sub,
-      claims: data.claims,
-    },
-  });
+  return next({ context });
 });

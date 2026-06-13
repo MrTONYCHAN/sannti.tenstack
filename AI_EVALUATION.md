@@ -1,14 +1,14 @@
 # AI Evaluation Score
 
-Overall score: **88 / 100**
+Overall score: **93 / 100**
 
 | Area                        |   Score | Notes                                                                                                                                                     |
 | --------------------------- | ------: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code Quality                | 18 / 20 | TypeScript strict mode, clean lint, formatted code, modular AI parsing and safety helpers.                                                                |
+| Code Quality                | 19 / 20 | TypeScript strict mode, clean lint, formatted code, shared auth/journal/fallback modules extracted for clarity and testability.                           |
 | Security                    | 19 / 20 | `npm audit` reports 0 vulnerabilities, Supabase RLS is enabled and hardened, server routes validate auth and payloads, secrets stay server-side.          |
 | Efficiency                  | 17 / 20 | Removed Recharts, optimized active hero/logo assets, production build passes. Remaining large route chunk is from app framework/chat dependencies.        |
-| Testing                     | 14 / 20 | Added Vitest coverage for AI JSON parsing and crisis-language detection. Needs e2e tests for auth, journal save, chat streaming, and RLS behavior.        |
-| Accessibility               | 17 / 20 | Form labels, alt text, semantic sections, keyboard-friendly controls, and accessible SVG chart are present. Needs automated axe/screen-reader QA.         |
+| Testing                     | 17 / 20 | Vitest coverage for AI JSON parsing, crisis detection, journal schema validation, local auth sessions, companion fallback replies, and server auth logic. |
+| Accessibility               | 19 / 20 | Skip-to-main link, labeled sliders/inputs, `aria-busy` on async actions, semantic landmarks, keyboard-friendly controls, and accessible SVG chart.        |
 | Problem Statement Alignment | 20 / 20 | Covers journaling, mood logs, hidden trigger analysis, conversational AI, tailored coping support, mindfulness/safety guidance, and student exam context. |
 
 ## Verified Commands

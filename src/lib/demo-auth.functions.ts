@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
+import { requireSupabaseServerEnv } from "@/lib/supabase-env.server";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_USERNAME } from "./demo-auth";
 
 const DemoAuthInput = z.object({
@@ -30,14 +31,12 @@ export const ensureDemoAccount = createServerFn({ method: "POST" })
       throw new Error("Invalid demo credentials.");
     }
 
-    const supabaseUrl =
-      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const supabaseSecretKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+    const { url: supabaseUrl, secretKey: supabaseSecretKey } =
+      requireSupabaseServerEnv();
 
-    if (!supabaseUrl || !supabaseSecretKey) {
+    if (!supabaseSecretKey) {
       throw new Error(
-        "Demo login needs SUPABASE_SECRET_KEY in .env.local to provision the account.",
+        "Demo login needs SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY in .env.local to provision the account.",
       );
     }
 

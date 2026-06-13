@@ -10,7 +10,11 @@ function getSupabaseConfig() {
     import.meta.env.VITE_SUPABASE_URL || processEnv.SUPABASE_URL;
   const SUPABASE_PUBLISHABLE_KEY =
     import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    processEnv.SUPABASE_PUBLISHABLE_KEY;
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    processEnv.SUPABASE_PUBLISHABLE_KEY ||
+    processEnv.SUPABASE_ANON_KEY ||
+    processEnv.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    processEnv.VITE_SUPABASE_ANON_KEY;
 
   return { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY };
 }

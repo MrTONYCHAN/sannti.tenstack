@@ -3,7 +3,9 @@ dist
 .vercel
 .output
 .vinxi
+.tanstack
 coverage
 .env
 .env.local
+.saanti-local-store.json
 .DS_Store

@@ -1,15 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { createCompanionChatResponse } from "@/lib/companion-chat.server";
 import {
-  buildCompanionSystemPrompt,
-  createCompanionModel,
-  getGoogleAiApiKey,
-} from "@/lib/ai-gateway.server";
-import { containsCrisisLanguage } from "@/lib/wellness-safety";
+  requireSupabaseServerEnv,
+  hasSupabaseServerConfig,
+} from "@/lib/supabase-env.server";
+import { isLocalAuthToken, LOCAL_USER_ID } from "@/lib/auth-mode";
+import {
+  isServerLocalAuthMode,
+  localAuthServerContext,
+} from "@/lib/auth-mode.server";
+import * as localData from "@/lib/local-data.server";
 
-const MAX_CHAT_CONTEXT_MESSAGES = 24;
 const MAX_CHAT_MESSAGE_CHARS = 4000;
 
 const TextPartSchema = z
@@ -39,112 +42,167 @@ function textFromMessage(message: z.infer<typeof MessageSchema>): string {
     .trim();
 }
 
-function toSafeUiMessages(
-  messages: z.infer<typeof MessageSchema>[],
-): UIMessage[] {
-  return messages.slice(-MAX_CHAT_CONTEXT_MESSAGES).map((message, index) => ({
-    ...message,
-    id: message.id ?? `${message.role}-${index}`,
-    role: message.role,
-    parts: message.parts.map((part) => ({
-      type: "text" as const,
-      text: part.text.slice(0, MAX_CHAT_MESSAGE_CHARS),
-    })),
-  }));
-}
-
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const auth = request.headers.get("authorization");
-        if (!auth?.startsWith("Bearer "))
-          return new Response("Unauthorized", { status: 401 });
-        const token = auth.slice(7);
-
-        const SUPABASE_URL =
-          process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-        const SUPABASE_PUBLISHABLE_KEY =
-          process.env.SUPABASE_PUBLISHABLE_KEY ||
-          process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-        if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-          return new Response("Server is not configured", { status: 500 });
-        }
-
-        const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-          global: { headers: { Authorization: `Bearer ${token}` } },
-          auth: { persistSession: false, autoRefreshToken: false },
-        });
-        const { data: claims, error: claimsErr } =
-          await supabase.auth.getClaims(token);
-        if (claimsErr || !claims?.claims?.sub)
-          return new Response("Unauthorized", { status: 401 });
-        const userId = claims.claims.sub;
-
-        let body: z.infer<typeof ChatBodySchema>;
         try {
-          body = ChatBodySchema.parse(await request.json());
-        } catch {
-          return new Response("Bad request", { status: 400 });
-        }
-        const { threadId } = body;
-        const messages = toSafeUiMessages(body.messages);
-        const last = body.messages[body.messages.length - 1];
-        const latestUserText =
-          last?.role === "user" ? textFromMessage(last) : "";
+          const auth = request.headers.get("authorization");
+          const token = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : "";
 
-        if (!latestUserText)
-          return new Response("Bad request", { status: 400 });
+          let userId = LOCAL_USER_ID;
+          let localMode = isServerLocalAuthMode();
 
-        // Verify thread belongs to user
-        const { data: thread } = await supabase
-          .from("chat_threads")
-          .select("id")
-          .eq("id", threadId)
-          .eq("user_id", userId)
-          .maybeSingle();
-        if (!thread) return new Response("Thread not found", { status: 404 });
+          if (token && isLocalAuthToken(token)) {
+            localMode = true;
+            userId = LOCAL_USER_ID;
+          } else if (token && !localMode) {
+            if (!hasSupabaseServerConfig()) {
+              return new Response("Unauthorized", { status: 401 });
+            }
 
-        await supabase.from("chat_messages").insert({
-          thread_id: threadId,
-          user_id: userId,
-          role: "user",
-          content: latestUserText,
-        });
+            const {
+              url: SUPABASE_URL,
+              publishableKey: SUPABASE_PUBLISHABLE_KEY,
+            } = requireSupabaseServerEnv();
 
-        const key = getGoogleAiApiKey();
-        if (!key) return new Response("AI not configured", { status: 500 });
-        const crisisDetected = containsCrisisLanguage(latestUserText);
+            const supabase = createClient(
+              SUPABASE_URL,
+              SUPABASE_PUBLISHABLE_KEY,
+              {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+                auth: { persistSession: false, autoRefreshToken: false },
+              },
+            );
+            const { data: userData, error: userErr } =
+              await supabase.auth.getUser(token);
+            if (userErr || !userData.user) {
+              if (isServerLocalAuthMode()) {
+                localMode = true;
+                userId = localAuthServerContext().userId;
+              } else {
+                return new Response("Unauthorized", { status: 401 });
+              }
+            } else {
+              userId = userData.user.id;
+              localMode = false;
+            }
+          } else if (!localMode) {
+            return new Response("Unauthorized", { status: 401 });
+          }
 
-        const result = streamText({
-          model: createCompanionModel(key),
-          system: buildCompanionSystemPrompt({ crisisDetected }),
-          messages: await convertToModelMessages(messages),
-        });
+          let body: z.infer<typeof ChatBodySchema>;
+          try {
+            body = ChatBodySchema.parse(await request.json());
+          } catch {
+            return new Response("Bad request", { status: 400 });
+          }
 
-        return result.toUIMessageStreamResponse({
-          originalMessages: messages,
-          onFinish: async ({ messages: finalMessages }) => {
-            const assistant = finalMessages[finalMessages.length - 1];
-            if (assistant?.role === "assistant") {
+          const { threadId } = body;
+          const messages = body.messages.map((message, index) => ({
+            ...message,
+            id: message.id ?? `${message.role}-${index}`,
+            parts: message.parts.map((part) => ({
+              type: "text" as const,
+              text: part.text.slice(0, MAX_CHAT_MESSAGE_CHARS),
+            })),
+          }));
+          const last = body.messages[body.messages.length - 1];
+          const latestUserText =
+            last?.role === "user" ? textFromMessage(last) : "";
+
+          if (!latestUserText)
+            return new Response("Bad request", { status: 400 });
+
+          if (localMode) {
+            localData.ensureThread(userId, threadId);
+            localData.insertChatMessage(
+              userId,
+              threadId,
+              "user",
+              latestUserText,
+            );
+          } else {
+            const {
+              url: SUPABASE_URL,
+              publishableKey: SUPABASE_PUBLISHABLE_KEY,
+            } = requireSupabaseServerEnv();
+            const supabase = createClient(
+              SUPABASE_URL,
+              SUPABASE_PUBLISHABLE_KEY,
+              {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+                auth: { persistSession: false, autoRefreshToken: false },
+              },
+            );
+
+            const { data: thread } = await supabase
+              .from("chat_threads")
+              .select("id")
+              .eq("id", threadId)
+              .eq("user_id", userId)
+              .maybeSingle();
+            if (!thread)
+              return new Response("Thread not found", { status: 404 });
+
+            await supabase.from("chat_messages").insert({
+              thread_id: threadId,
+              user_id: userId,
+              role: "user",
+              content: latestUserText,
+            });
+          }
+
+          return createCompanionChatResponse({
+            messages,
+            latestUserText,
+            onFinish: async ({ messages: finalMessages }) => {
+              const assistant = finalMessages[finalMessages.length - 1];
+              if (assistant?.role !== "assistant") return;
+
               const text = assistant.parts
                 .map((p) => (p.type === "text" ? p.text : ""))
                 .join("");
-              if (text.trim()) {
-                await supabase.from("chat_messages").insert({
-                  thread_id: threadId,
-                  user_id: userId,
-                  role: "assistant",
-                  content: text,
-                });
-                await supabase
-                  .from("chat_threads")
-                  .update({ updated_at: new Date().toISOString() })
-                  .eq("id", threadId);
+              if (!text.trim()) return;
+
+              if (localMode) {
+                localData.insertChatMessage(
+                  userId,
+                  threadId,
+                  "assistant",
+                  text,
+                );
+                return;
               }
-            }
-          },
-        });
+
+              const {
+                url: SUPABASE_URL,
+                publishableKey: SUPABASE_PUBLISHABLE_KEY,
+              } = requireSupabaseServerEnv();
+              const supabase = createClient(
+                SUPABASE_URL,
+                SUPABASE_PUBLISHABLE_KEY,
+                {
+                  global: { headers: { Authorization: `Bearer ${token}` } },
+                  auth: { persistSession: false, autoRefreshToken: false },
+                },
+              );
+              await supabase.from("chat_messages").insert({
+                thread_id: threadId,
+                user_id: userId,
+                role: "assistant",
+                content: text,
+              });
+              await supabase
+                .from("chat_threads")
+                .update({ updated_at: new Date().toISOString() })
+                .eq("id", threadId);
+            },
+          });
+        } catch (error) {
+          console.error("[chat] unhandled error", error);
+          return new Response("Chat failed", { status: 500 });
+        }
       },
     },
   },

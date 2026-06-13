@@ -5,10 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getThreadMessages, renameThread } from "@/lib/threads.functions";
-import { supabase } from "@/integrations/supabase/client";
+import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
+import { getLocalAuthToken, isLocalAuthMode } from "@/lib/local-auth";
+import { LOCAL_AUTH_TOKEN } from "@/lib/auth-mode";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Sparkles } from "lucide-react";
+import { Send } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import logo from "@/assets/logo.jpg";
 
@@ -81,6 +83,19 @@ function ChatInner({
 }) {
   const [token, setToken] = useState<string | null>(null);
   useEffect(() => {
+    if (isLocalAuthMode()) {
+      setToken(getLocalAuthToken() ?? LOCAL_AUTH_TOKEN);
+      return;
+    }
+
+    const localToken = getLocalAuthToken();
+    if (localToken) {
+      setToken(localToken);
+      return;
+    }
+
+    if (!hasSupabaseConfig()) return;
+
     supabase.auth
       .getSession()
       .then(({ data }) => setToken(data.session?.access_token ?? null));
@@ -129,8 +144,20 @@ function ChatInner({
 
   return (
     <div className="flex h-full flex-col">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        >
+          <img
+            src={logo}
+            alt=""
+            width={480}
+            height={480}
+            className="w-[min(80vw,28rem)] max-w-none opacity-[0.08] mix-blend-multiply dark:opacity-[0.05] dark:mix-blend-screen"
+          />
+        </div>
+        <div className="relative z-10 mx-auto max-w-3xl space-y-6 px-4 py-8">
           {messages.length === 0 && (
             <div className="space-y-6 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-secondary">
@@ -180,11 +207,8 @@ function ChatInner({
               );
             }
             return (
-              <div key={m.id} className="flex gap-3">
-                <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-secondary">
-                  <Sparkles className="h-3.5 w-3.5 text-primary" />
-                </div>
-                <div className="prose prose-sm max-w-none flex-1 text-foreground prose-p:my-2 prose-headings:my-3 prose-li:my-0">
+              <div key={m.id}>
+                <div className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-headings:my-3 prose-li:my-0">
                   <ReactMarkdown>{text || "…"}</ReactMarkdown>
                 </div>
               </div>
@@ -192,19 +216,14 @@ function ChatInner({
           })}
 
           {status === "submitted" && (
-            <div className="flex gap-3">
-              <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-secondary">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-              </div>
-              <p className="animate-pulse text-sm text-muted-foreground">
-                Saanti is thinking…
-              </p>
-            </div>
+            <p className="animate-pulse text-sm text-muted-foreground">
+              Saanti is thinking…
+            </p>
           )}
 
           {error && (
             <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              Something went wrong. Please try again.
+              {error.message || "Something went wrong. Please try again."}
             </p>
           )}
         </div>

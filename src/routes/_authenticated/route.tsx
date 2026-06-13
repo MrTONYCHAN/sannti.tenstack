@@ -8,6 +8,15 @@ import {
 } from "@tanstack/react-router";
 import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import {
+  DEMO_PASSWORD,
+  DEMO_USERNAME,
+  isLocalAuthMode,
+  isLocalSessionActive,
+  signInLocal,
+  signOutLocal,
+  usesLocalAuth,
+} from "@/lib/local-auth";
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -32,6 +41,18 @@ import logo from "@/assets/logo.jpg";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    if (isLocalAuthMode()) {
+      if (!isLocalSessionActive()) {
+        signInLocal(DEMO_USERNAME, DEMO_PASSWORD);
+      }
+      return { user: { id: "local", email: "superadmin@saanti.local" } };
+    }
+
+    if (usesLocalAuth()) {
+      if (!isLocalSessionActive()) throw redirect({ to: "/auth" });
+      return { user: { id: "local", email: "local@saanti.dev" } };
+    }
+
     if (!hasSupabaseConfig()) throw redirect({ to: "/auth" });
 
     const { data, error } = await supabase.auth.getUser();
@@ -52,8 +73,12 @@ function AuthedLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   async function signOut() {
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    if (usesLocalAuth()) {
+      signOutLocal();
+    } else {
+      await supabase.auth.signOut();
+    }
+    navigate({ to: "/", replace: true });
   }
 
   return (
@@ -61,7 +86,7 @@ function AuthedLayout() {
       <div className="flex min-h-screen w-full bg-background">
         <Sidebar collapsible="icon">
           <SidebarHeader>
-            <Link to="/chat" className="flex items-center gap-2 px-2 py-2">
+            <Link to="/" className="flex items-center gap-2 px-2 py-2">
               <img
                 src={logo}
                 alt=""
@@ -74,8 +99,20 @@ function AuthedLayout() {
               </span>
             </Link>
           </SidebarHeader>
-          <SidebarContent>
-            <SidebarGroup>
+          <SidebarContent className="relative overflow-hidden">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            >
+              <img
+                src={logo}
+                alt=""
+                width={240}
+                height={240}
+                className="w-[min(90%,12rem)] max-w-none opacity-[0.08] mix-blend-multiply dark:opacity-[0.05] dark:mix-blend-screen"
+              />
+            </div>
+            <SidebarGroup className="relative z-10">
               <SidebarGroupContent>
                 <SidebarMenu>
                   {NAV.map((item) => {
@@ -122,7 +159,11 @@ function AuthedLayout() {
               {NAV.find((n) => pathname.startsWith(n.to))?.label ?? "Saanti"}
             </span>
           </header>
-          <main className="flex-1 overflow-hidden">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="flex-1 overflow-hidden"
+          >
             <Outlet />
           </main>
         </div>
