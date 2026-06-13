@@ -187,7 +187,9 @@ function ChatInner({
 
           {error && (
             <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error.message || "Something went wrong. Please try again."}
+              {error.message?.trim() && error.message !== "An error occurred."
+                ? error.message
+                : "Saanti couldn't reply right now. Please try again — offline support should still work once the server redeploys."}
             </p>
           )}
         </div>

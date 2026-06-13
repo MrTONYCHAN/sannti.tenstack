@@ -115,13 +115,21 @@ export const Route = createFileRoute("/api/chat")({
             return new Response("Bad request", { status: 400 });
 
           if (localMode) {
-            localData.ensureThread(userId, threadId);
-            localData.insertChatMessage(
-              userId,
-              threadId,
-              "user",
-              latestUserText,
-            );
+            try {
+              localData.ensureThread(userId, threadId);
+              localData.insertChatMessage(
+                userId,
+                threadId,
+                "user",
+                latestUserText,
+              );
+            } catch (error) {
+              console.error("[chat] failed to persist user message", error);
+              return Response.json(
+                { error: "Could not save your message" },
+                { status: 500 },
+              );
+            }
           } else {
             const {
               url: SUPABASE_URL,
@@ -157,51 +165,57 @@ export const Route = createFileRoute("/api/chat")({
             messages,
             latestUserText,
             onFinish: async ({ messages: finalMessages }) => {
-              const assistant = finalMessages[finalMessages.length - 1];
-              if (assistant?.role !== "assistant") return;
+              try {
+                const assistant = finalMessages[finalMessages.length - 1];
+                if (assistant?.role !== "assistant") return;
 
-              const text = assistant.parts
-                .map((p) => (p.type === "text" ? p.text : ""))
-                .join("");
-              if (!text.trim()) return;
+                const text = assistant.parts
+                  .map((p) => (p.type === "text" ? p.text : ""))
+                  .join("");
+                if (!text.trim()) return;
 
-              if (localMode) {
-                localData.insertChatMessage(
-                  userId,
-                  threadId,
-                  "assistant",
-                  text,
+                if (localMode) {
+                  localData.insertChatMessage(
+                    userId,
+                    threadId,
+                    "assistant",
+                    text,
+                  );
+                  return;
+                }
+
+                const {
+                  url: SUPABASE_URL,
+                  publishableKey: SUPABASE_PUBLISHABLE_KEY,
+                } = requireSupabaseServerEnv();
+                const supabase = createClient(
+                  SUPABASE_URL,
+                  SUPABASE_PUBLISHABLE_KEY,
+                  {
+                    global: { headers: { Authorization: `Bearer ${token}` } },
+                    auth: { persistSession: false, autoRefreshToken: false },
+                  },
                 );
-                return;
+                await supabase.from("chat_messages").insert({
+                  thread_id: threadId,
+                  user_id: userId,
+                  role: "assistant",
+                  content: text,
+                });
+                await supabase
+                  .from("chat_threads")
+                  .update({ updated_at: new Date().toISOString() })
+                  .eq("id", threadId);
+              } catch (error) {
+                console.error("[chat] failed to persist assistant message", error);
               }
-
-              const {
-                url: SUPABASE_URL,
-                publishableKey: SUPABASE_PUBLISHABLE_KEY,
-              } = requireSupabaseServerEnv();
-              const supabase = createClient(
-                SUPABASE_URL,
-                SUPABASE_PUBLISHABLE_KEY,
-                {
-                  global: { headers: { Authorization: `Bearer ${token}` } },
-                  auth: { persistSession: false, autoRefreshToken: false },
-                },
-              );
-              await supabase.from("chat_messages").insert({
-                thread_id: threadId,
-                user_id: userId,
-                role: "assistant",
-                content: text,
-              });
-              await supabase
-                .from("chat_threads")
-                .update({ updated_at: new Date().toISOString() })
-                .eq("id", threadId);
             },
           });
         } catch (error) {
           console.error("[chat] unhandled error", error);
-          return new Response("Chat failed", { status: 500 });
+          const message =
+            error instanceof Error ? error.message : "Chat failed";
+          return Response.json({ error: message }, { status: 500 });
         }
       },
     },

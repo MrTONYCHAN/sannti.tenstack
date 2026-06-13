@@ -3,7 +3,6 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
-  streamText,
   type UIMessage,
 } from "ai";
 import {
@@ -19,6 +18,17 @@ type FinishHandler = (args: {
   responseMessage?: UIMessage;
 }) => void | Promise<void>;
 
+function safeFinish(onFinish?: FinishHandler): FinishHandler | undefined {
+  if (!onFinish) return undefined;
+  return async (args) => {
+    try {
+      await onFinish(args);
+    } catch (error) {
+      console.error("[chat] onFinish failed", error);
+    }
+  };
+}
+
 function fallbackStreamResponse(
   messages: UIMessage[],
   text: string,
@@ -32,10 +42,24 @@ function fallbackStreamResponse(
       writer.write({ type: "text-delta", id, delta: text });
       writer.write({ type: "text-end", id });
     },
-    onFinish,
+    onFinish: safeFinish(onFinish),
   });
 
   return createUIMessageStreamResponse({ stream });
+}
+
+async function generateCompanionReply(
+  messages: UIMessage[],
+  system: string,
+  apiKey: string,
+) {
+  const modelMessages = await convertToModelMessages(messages);
+  const { text } = await generateText({
+    model: createCompanionModel(apiKey),
+    system,
+    messages: modelMessages,
+  });
+  return text.trim();
 }
 
 export async function createCompanionChatResponse(options: {
@@ -46,36 +70,13 @@ export async function createCompanionChatResponse(options: {
   const { messages, latestUserText, onFinish } = options;
   const crisisDetected = containsCrisisLanguage(latestUserText);
   const system = buildCompanionSystemPrompt({ crisisDetected });
-  const modelMessages = await convertToModelMessages(messages);
-  const key = getGoogleAiApiKey();
+  const apiKey = getGoogleAiApiKey();
 
-  if (key) {
+  if (apiKey) {
     try {
-      const result = streamText({
-        model: createCompanionModel(key),
-        system,
-        messages: modelMessages,
-      });
-
-      return result.toUIMessageStreamResponse({
-        originalMessages: messages,
-        onFinish,
-      });
-    } catch (error) {
-      console.error(
-        "[chat] streaming failed, trying non-stream fallback",
-        error,
-      );
-    }
-
-    try {
-      const { text } = await generateText({
-        model: createCompanionModel(key),
-        system,
-        messages: modelMessages,
-      });
-      if (text.trim()) {
-        return fallbackStreamResponse(messages, text.trim(), onFinish);
+      const reply = await generateCompanionReply(messages, system, apiKey);
+      if (reply) {
+        return fallbackStreamResponse(messages, reply, onFinish);
       }
     } catch (error) {
       console.error("[chat] generateText failed, using offline reply", error);
