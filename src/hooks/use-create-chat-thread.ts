@@ -17,6 +17,11 @@ export function useCreateChatThread() {
         navigate({ to: "/chat/$threadId", params: { threadId: row.id } });
       }
     },
-    onError: () => toast.error("Could not start a new conversation"),
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not start a new conversation",
+      ),
   });
 }
