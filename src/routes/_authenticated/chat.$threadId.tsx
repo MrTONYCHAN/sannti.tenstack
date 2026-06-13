@@ -5,14 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getThreadMessages, renameThread } from "@/lib/threads.functions";
-import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
-import { getLocalAuthToken, isLocalAuthMode } from "@/lib/local-auth";
-import { LOCAL_AUTH_TOKEN } from "@/lib/auth-mode";
+import { useChatAuthToken } from "@/hooks/use-chat-auth-token";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import logo from "@/assets/logo.jpg";
+import { LogoWatermark } from "@/components/brand/LogoWatermark";
+import { SaantiLogo } from "@/components/brand/SaantiLogo";
 
 export const Route = createFileRoute("/_authenticated/chat/$threadId")({
   component: ChatThread,
@@ -81,25 +80,7 @@ function ChatInner({
   initialMessages: UIMessage[];
   onFirstUserMessage: (text: string) => void;
 }) {
-  const [token, setToken] = useState<string | null>(null);
-  useEffect(() => {
-    if (isLocalAuthMode()) {
-      setToken(getLocalAuthToken() ?? LOCAL_AUTH_TOKEN);
-      return;
-    }
-
-    const localToken = getLocalAuthToken();
-    if (localToken) {
-      setToken(localToken);
-      return;
-    }
-
-    if (!hasSupabaseConfig()) return;
-
-    supabase.auth
-      .getSession()
-      .then(({ data }) => setToken(data.session?.access_token ?? null));
-  }, []);
+  const token = useChatAuthToken();
 
   const transport = useMemo(
     () =>
@@ -145,29 +126,12 @@ function ChatInner({
   return (
     <div className="flex h-full flex-col">
       <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
-        >
-          <img
-            src={logo}
-            alt=""
-            width={480}
-            height={480}
-            className="w-[min(80vw,28rem)] max-w-none opacity-[0.08] mix-blend-multiply dark:opacity-[0.05] dark:mix-blend-screen"
-          />
-        </div>
+        <LogoWatermark size="panel" />
         <div className="relative z-10 mx-auto max-w-3xl space-y-6 px-4 py-8">
           {messages.length === 0 && (
             <div className="space-y-6 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-secondary">
-                <img
-                  src={logo}
-                  alt=""
-                  className="h-9 w-9"
-                  width={36}
-                  height={36}
-                />
+                <SaantiLogo size="md" alt="" blended={false} />
               </div>
               <div>
                 <h2 className="text-xl font-semibold">

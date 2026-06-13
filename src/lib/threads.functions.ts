@@ -1,15 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
-import {
-  requireSupabaseAuth,
-  type AuthContext,
-} from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { resolveAuthContext } from "@/lib/auth-context";
 import * as localData from "@/lib/local-data.server";
-import { z } from "zod";
+import {
+  createThreadSchema,
+  renameThreadSchema,
+  threadIdSchema,
+  threadMessagesSchema,
+} from "@/lib/thread-schema";
 
 export const listThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const ctx = context as AuthContext;
+    const ctx = resolveAuthContext(context);
     if (ctx.localMode) {
       return localData.listThreads(ctx.userId);
     }
@@ -24,24 +27,18 @@ export const listThreads = createServerFn({ method: "GET" })
 
 export const createThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) =>
-    z.object({ title: z.string().min(1).max(120).optional() }).parse(d ?? {}),
-  )
+  .validator((d: unknown) => createThreadSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const ctx = context as AuthContext;
+    const ctx = resolveAuthContext(context);
+    const title = data.title ?? "New conversation";
+
     if (ctx.localMode) {
-      return localData.createThread(
-        ctx.userId,
-        data.title ?? "New conversation",
-      );
+      return localData.createThread(ctx.userId, title);
     }
 
     const { data: row, error } = await ctx
       .supabase!.from("chat_threads")
-      .insert({
-        user_id: ctx.userId,
-        title: data.title ?? "New conversation",
-      })
+      .insert({ user_id: ctx.userId, title })
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -50,9 +47,9 @@ export const createThread = createServerFn({ method: "POST" })
 
 export const deleteThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => threadIdSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const ctx = context as AuthContext;
+    const ctx = resolveAuthContext(context);
     if (ctx.localMode) {
       return localData.deleteThread(ctx.userId, data.id);
     }
@@ -67,13 +64,9 @@ export const deleteThread = createServerFn({ method: "POST" })
 
 export const renameThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) =>
-    z
-      .object({ id: z.string().uuid(), title: z.string().min(1).max(120) })
-      .parse(d),
-  )
+  .validator((d: unknown) => renameThreadSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const ctx = context as AuthContext;
+    const ctx = resolveAuthContext(context);
     if (ctx.localMode) {
       return localData.renameThread(ctx.userId, data.id, data.title);
     }
@@ -88,9 +81,9 @@ export const renameThread = createServerFn({ method: "POST" })
 
 export const getThreadMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) => z.object({ threadId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => threadMessagesSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const ctx = context as AuthContext;
+    const ctx = resolveAuthContext(context);
     if (ctx.localMode) {
       return localData.getThreadMessages(ctx.userId, data.threadId);
     }

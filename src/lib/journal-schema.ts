@@ -8,3 +8,5 @@ export const journalEntrySchema = z.object({
   study_hours: z.number().min(0).max(24).optional(),
   content: z.string().trim().min(5).max(8000),
 });
+
+export type JournalEntryInput = z.infer<typeof journalEntrySchema>;

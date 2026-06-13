@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Sparkles, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { moodEmoji } from "@/lib/journal-mood";
 
 export const Route = createFileRoute("/_authenticated/journal")({
   component: JournalPage,
@@ -86,19 +87,19 @@ function JournalPage() {
                 label="Mood"
                 value={mood}
                 onChange={setMood}
-                hint={emojiFor("mood", mood)}
+                hint={moodEmoji("mood", mood)}
               />
               <SliderField
                 label="Stress"
                 value={stress}
                 onChange={setStress}
-                hint={emojiFor("stress", stress)}
+                hint={moodEmoji("stress", stress)}
               />
               <SliderField
                 label="Energy"
                 value={energy}
                 onChange={setEnergy}
-                hint={emojiFor("energy", energy)}
+                hint={moodEmoji("energy", energy)}
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -268,10 +269,4 @@ function SliderField({
       />
     </div>
   );
-}
-
-function emojiFor(kind: "mood" | "stress" | "energy", v: number): string {
-  if (kind === "stress") return v >= 8 ? "🌪️" : v >= 5 ? "😟" : "🌿";
-  if (kind === "energy") return v >= 7 ? "⚡" : v >= 4 ? "🙂" : "😴";
-  return v >= 7 ? "😊" : v >= 4 ? "😐" : "😔";
 }

@@ -14,7 +14,6 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "sonner";
 import { hasSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { usesLocalAuth } from "@/lib/local-auth";
-// noop
 
 function NotFoundComponent() {
   return (

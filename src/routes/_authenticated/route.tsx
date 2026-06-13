@@ -36,7 +36,9 @@ import {
   NotebookPen,
   LineChart,
 } from "lucide-react";
-import logo from "@/assets/logo.jpg";
+import { LogoWatermark } from "@/components/brand/LogoWatermark";
+import { SaantiLogo } from "@/components/brand/SaantiLogo";
+import { ChatThreadList } from "@/components/chat/ChatThreadList";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -71,6 +73,7 @@ const NAV = [
 function AuthedLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChatRoute = pathname.startsWith("/chat");
 
   async function signOut() {
     if (usesLocalAuth()) {
@@ -86,33 +89,22 @@ function AuthedLayout() {
       <div className="flex min-h-screen w-full bg-background">
         <Sidebar collapsible="icon">
           <SidebarHeader>
-            <Link to="/" className="flex items-center gap-2 px-2 py-2">
-              <img
-                src={logo}
-                alt=""
-                className="h-7 w-7"
-                width={28}
-                height={28}
-              />
-              <span className="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-                Saanti
-              </span>
-            </Link>
+            <div className="flex items-center gap-1">
+              <Link
+                to="/"
+                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2"
+              >
+                <SaantiLogo size="sm" alt="" blended={false} />
+                <span className="truncate text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+                  Saanti
+                </span>
+              </Link>
+              <SidebarTrigger />
+            </div>
           </SidebarHeader>
           <SidebarContent className="relative overflow-hidden">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-            >
-              <img
-                src={logo}
-                alt=""
-                width={240}
-                height={240}
-                className="w-[min(90%,12rem)] max-w-none opacity-[0.08] mix-blend-multiply dark:opacity-[0.05] dark:mix-blend-screen"
-              />
-            </div>
-            <SidebarGroup className="relative z-10">
+            <LogoWatermark size="sidebar" />
+            <SidebarGroup className="relative z-10 shrink-0">
               <SidebarGroupContent>
                 <SidebarMenu>
                   {NAV.map((item) => {
@@ -137,6 +129,11 @@ function AuthedLayout() {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+            {isChatRoute && (
+              <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+                <ChatThreadList />
+              </div>
+            )}
           </SidebarContent>
           <SidebarFooter>
             <Button
@@ -153,12 +150,6 @@ function AuthedLayout() {
           </SidebarFooter>
         </Sidebar>
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="flex h-12 items-center gap-2 border-b border-border/60 bg-background px-3">
-            <SidebarTrigger />
-            <span className="text-sm font-medium text-muted-foreground">
-              {NAV.find((n) => pathname.startsWith(n.to))?.label ?? "Saanti"}
-            </span>
-          </header>
           <main
             id="main-content"
             tabIndex={-1}

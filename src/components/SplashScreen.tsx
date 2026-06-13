@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
-import logo from "@/assets/logo.jpg";
+import { SaantiLogo } from "@/components/brand/SaantiLogo";
 import { cn } from "@/lib/utils";
-
-const SPLASH_KEY = "saanti-splash-seen";
 
 type SplashScreenProps = {
   onComplete: () => void;
@@ -29,15 +27,9 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
         exiting && "pointer-events-none opacity-0",
       )}
     >
-      <img
-        src={logo}
-        alt="Saanti logo"
-        width={96}
-        height={96}
-        className={cn(
-          "h-24 w-24 mix-blend-multiply dark:mix-blend-screen",
-          !exiting && "animate-in fade-in zoom-in-95 duration-700",
-        )}
+      <SaantiLogo
+        size="xl"
+        className={cn(!exiting && "animate-in fade-in zoom-in-95 duration-700")}
       />
       <p
         className={cn(
@@ -50,13 +42,4 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
       </p>
     </div>
   );
-}
-
-export function shouldShowSplash() {
-  if (typeof window === "undefined") return false;
-  return !sessionStorage.getItem(SPLASH_KEY);
-}
-
-export function markSplashSeen() {
-  sessionStorage.setItem(SPLASH_KEY, "1");
 }
