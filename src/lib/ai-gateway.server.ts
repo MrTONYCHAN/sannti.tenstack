@@ -1,21 +1,8 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { DEFAULT_COMPANION_MODEL, getGoogleAiApiKey } from "./ai-gateway-keys";
 import { CRISIS_SUPPORT_MESSAGE, formatHelplines } from "./wellness-safety";
 
-export const DEFAULT_COMPANION_MODEL = "gemini-2.5-flash";
-
-export function isValidGoogleAiApiKey(key: string | undefined | null) {
-  if (!key?.trim()) return false;
-  // Google AI Studio keys start with AIza; other formats (e.g. Vertex) need separate setup.
-  return key.trim().startsWith("AIza");
-}
-
-export function getGoogleAiApiKey() {
-  const key =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_AI_API_KEY;
-  return isValidGoogleAiApiKey(key) ? key!.trim() : undefined;
-}
+export { DEFAULT_COMPANION_MODEL, getGoogleAiApiKey, isValidGoogleAiApiKey } from "./ai-gateway-keys";
 
 export function createCompanionModel(apiKey: string) {
   const google = createGoogleGenerativeAI({ apiKey });
