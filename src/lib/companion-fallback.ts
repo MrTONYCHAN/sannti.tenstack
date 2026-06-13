@@ -21,7 +21,5 @@ If you might hurt yourself, contact local emergency services right away. You don
 
 That feeling makes sense, especially when you're under pressure. For the next few minutes, try this: unclench your jaw, drop your shoulders, and take one slow breath in for 4 counts and out for 6 counts.
 
-When you're ready, pick one tiny next step — a glass of water, a 5-minute walk, or writing down the one thing worrying you most. I'm here with you.
-
-*(Saanti is in offline support mode — add a valid \`GOOGLE_GENERATIVE_AI_API_KEY\` for full AI replies.)*`;
+When you're ready, pick one tiny next step — a glass of water, a 5-minute walk, or writing down the one thing worrying you most. I'm here with you.`;
 }

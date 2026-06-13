@@ -3,12 +3,18 @@ import { CRISIS_SUPPORT_MESSAGE, formatHelplines } from "./wellness-safety";
 
 export const DEFAULT_COMPANION_MODEL = "gemini-2.5-flash";
 
+export function isValidGoogleAiApiKey(key: string | undefined | null) {
+  if (!key?.trim()) return false;
+  // Google AI Studio keys start with AIza; other formats (e.g. Vertex) need separate setup.
+  return key.trim().startsWith("AIza");
+}
+
 export function getGoogleAiApiKey() {
-  return (
+  const key =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
     process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_AI_API_KEY
-  );
+    process.env.GOOGLE_AI_API_KEY;
+  return isValidGoogleAiApiKey(key) ? key!.trim() : undefined;
 }
 
 export function createCompanionModel(apiKey: string) {

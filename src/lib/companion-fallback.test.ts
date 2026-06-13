@@ -13,7 +13,6 @@ describe("buildFallbackCompanionReply", () => {
       "I failed my mock test and feel hopeless about NEET",
     );
     expect(reply).toContain("Thank you for sharing");
-    expect(reply).toContain("offline support mode");
     expect(reply).not.toContain("Your safety matters");
   });
 
